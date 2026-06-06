@@ -25,6 +25,7 @@ Usage:
 import os
 import smtplib
 import resource
+import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -88,6 +89,20 @@ _LARGE_CAP_FALLBACK = [
     'TMO','AMD','ACN','NEE','ORCL','QCOM','TXN','IBM','GS','SPGI',
     'LIN','CAT','BLK','AXP','GE','AMGN','HON','RTX','PM','DHR','SCHW',
 ]
+
+
+# ── DOWNLOAD WITH RETRY ───────────────────────────────────────────────────────
+def yf_download(ticker, period, retries=4, **kwargs):
+    """yf.download with exponential backoff — GitHub Actions IPs get rate-limited."""
+    delays = [5, 15, 45, 90]
+    for attempt, delay in enumerate(delays[:retries], 1):
+        df = yf.download(ticker, period=period, progress=False, **kwargs)
+        if not df.empty:
+            return df
+        if attempt < retries:
+            print(f'  [{ticker}] rate-limited, retrying in {delay}s (attempt {attempt}/{retries})...')
+            time.sleep(delay)
+    return df  # return empty df on final failure; caller decides how to handle
 
 
 # ── UNIVERSE ──────────────────────────────────────────────────────────────────
@@ -370,7 +385,7 @@ def scan_ticker(ticker, spy_df, vix, mcap):
     )
     try:
         t_obj = yf.Ticker(ticker)
-        df    = fix_cols(yf.download(ticker, period='2y', progress=False, auto_adjust=True))
+        df    = fix_cols(yf_download(ticker, period='2y', auto_adjust=True))
         if len(df) < 210:
             result['error'] = 'insufficient data'; return result
 
@@ -811,9 +826,12 @@ def main():
     print(f'  LEAPS UNIFIED SCANNER  —  {run_date}')
     print(f'{BAR}\n  Loading market data...')
 
-    vix_df  = fix_cols(yf.download('^VIX', period='5d', progress=False, auto_adjust=True))
-    vix     = float(vix_df['Close'].dropna().iloc[-1])
-    spy_df  = fix_cols(yf.download('SPY',  period='2y', progress=False, auto_adjust=True))
+    vix_df  = fix_cols(yf_download('^VIX', period='5d', auto_adjust=True))
+    vix_series = vix_df['Close'].dropna() if not vix_df.empty else pd.Series([], dtype=float)
+    vix     = float(vix_series.iloc[-1]) if not vix_series.empty else 20.0
+    if vix_series.empty:
+        print('  WARNING: VIX data unavailable — defaulting to 20.0 (RISK-ON)')
+    spy_df  = fix_cols(yf_download('SPY',  period='2y', auto_adjust=True))
     spy_p   = float(spy_df['Close'].iloc[-1])
     spy_s200= float(spy_df['Close'].rolling(200).mean().iloc[-1])
     trend   = 'BULLISH' if spy_p > spy_s200 else 'BEARISH'
