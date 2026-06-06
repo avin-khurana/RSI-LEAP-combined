@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+leaps_scan_results.csv
+leaps_scan.html
+rsi_scan_results.csv
+my_trades.csv
+*.html

@@ -1,0 +1,39 @@
+name: LEAPS Scanner
+
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'   # weekdays 5 PM EST (22:00 UTC)
+  workflow_dispatch:           # manual trigger from Actions tab
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scanner
+        env:
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_TO: avin.khurana18@gmail.com
+        run: python leaps_scanner.py
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaps-scan-${{ github.run_id }}
+          path: |
+            leaps_scan.html
+            leaps_scan_results.csv
+          retention-days: 14
